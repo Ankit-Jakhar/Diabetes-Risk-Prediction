@@ -1,0 +1,93 @@
+from flask import Flask, render_template, request
+from flask_sqlalchemy import SQLAlchemy
+
+import numpy as np
+import pandas as pd
+import joblib
+import sqlite3
+
+app = Flask(__name__)
+
+# SQLAlchemy config
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///prediction.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Load model and dataset
+model = joblib.load(r"C:\Users\ankit\Desktop\Diabetes Risk Prediction\model\diabetes_model.pkl")
+
+df = pd.read_csv(r"C:\Users\ankit\Desktop\csv files\diabetes.csv")
+df = df.drop(columns='Outcome')  # Keep original capitalization of columns
+
+# Define DB model
+class Prediction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    Pregnancies = db.Column(db.Float)
+    Glucose = db.Column(db.Float)
+    BloodPressure = db.Column(db.Float)
+    SkinThickness = db.Column(db.Float)
+    Insulin = db.Column(db.Float)
+    BMI = db.Column(db.Float)
+    DiabetesPedigreeFunction = db.Column(db.Float)
+    Age = db.Column(db.Float)
+    PredictionResult = db.Column(db.String(50))
+
+# Create DB tables
+with app.app_context():
+    db.create_all()
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+@app.route("/predict", methods=["POST"])
+def predict():
+    
+@app.route('/export', methods=['GET'])
+def export():
+    conn = sqlite3.connect('predictions.db')
+    df = pd.read_sql_query('SELECT * FROM predictions', conn)
+    conn.close()
+    df.to_csv('predictions_export.csv', index=False)
+    return send_file('predictions_export.csv', as_attachment=True)
+    try:
+        # Collect inputs and convert to float
+        Pregnancies = float(request.form['Pregnancies'])
+        Glucose = float(request.form['Glucose'])
+        BloodPressure = float(request.form['BloodPressure'])
+        SkinThickness = float(request.form['SkinThickness'])
+        Insulin = float(request.form['Insulin'])
+        BMI = float(request.form['BMI'])
+        DiabetesPedigreeFunction = float(request.form['DiabetesPedigreeFunction'])
+        Age = float(request.form['Age'])
+
+        # Prepare data for model
+        input_data = [Pregnancies, Glucose, BloodPressure, SkinThickness, Insulin, BMI, DiabetesPedigreeFunction, Age]
+        sample = pd.DataFrame([input_data], columns=df.columns)
+
+        # Make prediction
+        prediction = model.predict(sample)[0]
+        result = "Positive for Diabetes" if prediction == 1 else "Negative for Diabetes"
+
+        # Save to database
+        record = Prediction(
+            Pregnancies=Pregnancies,
+            Glucose=Glucose,
+            BloodPressure=BloodPressure,
+            SkinThickness=SkinThickness,
+            Insulin=Insulin,
+            BMI=BMI,
+            DiabetesPedigreeFunction=DiabetesPedigreeFunction,
+            Age=Age,
+            PredictionResult=result
+        )
+        db.session.add(record)
+        db.session.commit()
+
+        return render_template("result.html", prediction=result)
+
+    except Exception as e:
+        return f"<h2>Error: {e}</h2>"
+
+if __name__ == "__main__":
+    app.run(debug=True)
